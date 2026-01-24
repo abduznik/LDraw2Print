@@ -3,18 +3,17 @@ import os
 import re
 
 # --- SETTINGS ---
-# CHANGE THIS to your export folder
-export_root = "F:/3D_Prints/Lego_Export_Fixed/"
+export_root = "F:/3D_Prints/Lego_Export_Fixed/"  # <--- Verify this path
 
-# Create root folder if needed
 if not os.path.exists(export_root):
     os.makedirs(export_root)
 
-print("Starting Fixed Export...")
+print("--- Starting Auto-Triangulate Export ---")
 
-# Deselect everything
-if bpy.context.active_object:
+# Ensure Object Mode
+if bpy.context.active_object and bpy.context.active_object.mode != 'OBJECT':
     bpy.ops.object.mode_set(mode='OBJECT')
+
 bpy.ops.object.select_all(action='DESELECT')
 
 count = 0
@@ -22,59 +21,80 @@ count = 0
 def clean_string(text):
     return re.sub(r'[\\/*?:"<>|]', "_", text)
 
-# Loop through all objects
 for obj in bpy.data.objects:
-    if obj.type == 'MESH':
-        
-        # 1. Get Color Name for Folder Sorting
+    # 1. Filter: Must be Mesh and have Geometry
+    if obj.type != 'MESH':
+        continue
+    
+    # Check if object actually has vertices (Fixes "No Geometry" error)
+    if len(obj.data.vertices) < 3:
+        print(f"SKIPPING {obj.name}: Not enough vertices.")
+        continue
+
+    try:
+        # 2. Setup Folders
         if obj.active_material:
             mat_name = clean_string(obj.active_material.name)
         else:
             mat_name = "No_Color"
             
-        # Create the specific color folder
         color_folder = os.path.join(export_root, mat_name)
         if not os.path.exists(color_folder):
             os.makedirs(color_folder)
-            
-        # 2. Select Object
+
+        # 3. ISOLATE OBJECT
+        bpy.ops.object.select_all(action='DESELECT')
+        
+        # Force visibility
+        obj.hide_viewport = False
+        obj.hide_set(False)
+        
         obj.select_set(True)
         bpy.context.view_layer.objects.active = obj
         
-        # 3. Create Filename
+        # 4. FIX: ADD TRIANGULATE MODIFIER
+        # This fixes "Polygons > 4 vertices" error in Bambu Studio
+        mod = obj.modifiers.new(name="AutoTriangulate", type='TRIANGULATE')
+        mod.keep_custom_normals = True
+        mod.quad_method = 'BEAUTY'
+        mod.ngon_method = 'BEAUTY'
+        
+        # Force update so Blender 'sees' the modifier
+        bpy.context.view_layer.update()
+
+        # 5. EXPORT
         clean_obj_name = clean_string(obj.name)
         target_file = os.path.join(color_folder, f"{clean_obj_name}.obj")
         
-        try:
-            # 4. EXPORT with SCALE 1000 (Fixes "Object too small" popup)
-            if hasattr(bpy.ops.wm, "obj_export"):
-                # Blender 4.0+
-                bpy.ops.wm.obj_export(
-                    filepath=target_file,
-                    export_selected_objects=True,
-                    export_materials=True,
-                    global_scale=1000.0  # <--- THIS FIXES THE SIZE POPUP
-                )
-            else:
-                # Older Blender
-                bpy.ops.export_scene.obj(
-                    filepath=target_file,
-                    use_selection=True,
-                    use_materials=True,
-                    global_scale=1000.0, # <--- THIS FIXES THE SIZE POPUP
-                    axis_forward='Y',
-                    axis_up='Z'
-                )
+        if hasattr(bpy.ops.wm, "obj_export"):
+            # Blender 4.0+
+            bpy.ops.wm.obj_export(
+                filepath=target_file,
+                export_selected_objects=True,
+                export_eval_mode='DAG_EVAL_VIEWPORT', # Applies modifiers (Triangulation)
+                export_materials=True,
+                global_scale=1000.0 
+            )
+        else:
+            # Blender 3.x
+            bpy.ops.export_scene.obj(
+                filepath=target_file,
+                use_selection=True,
+                use_mesh_modifiers=True, # Applies modifiers (Triangulation)
+                use_materials=True,
+                global_scale=1000.0,
+                axis_forward='Y',
+                axis_up='Z'
+            )
 
-            count += 1
-            print(f"Exported: {clean_obj_name}")
-            
-        except Exception as e:
-            print(f"Error on {clean_obj_name}: {e}")
-            
-        # Deselect
-        obj.select_set(False)
+        # 6. CLEANUP
+        # Remove the modifier so we don't mess up the original scene
+        obj.modifiers.remove(mod)
+        
+        count += 1
+        print(f"[{count}] Exported: {clean_obj_name}")
 
-print("-" * 30)
-print(f"DONE! Exported {count} parts.")
-print(f"FILES ARE IN: {export_root}")
+    except Exception as e:
+        print(f"!!! FAILED on {obj.name}: {e}")
+
+print(f"--- Complete. Exported {count} parts. ---")
