@@ -89,8 +89,23 @@ jobs:
       run: |
         $File = "blender-diet/4.5/scripts/addons_core/io_scene_importldraw/loadldraw/loadldraw.py"
         $Content = Get-Content $File -Raw
+        
+        # Patch setupRealisticLook (Engine Switch)
         $Content = $Content.Replace("scene.render.engine = 'CYCLES'", "try:`n        scene.render.engine = 'CYCLES'`n    except:`n        pass")
-        $Content = $Content.Replace("scene.cycles.film_transparent = True", "try:`n        scene.cycles.film_transparent = True`n    except:`n        pass")
+        
+        # Patch setupInstructionsLook (Transparency Settings)
+        # We replace the first line of the block with a try, and indent the rest if possible, 
+        # or easier: just comment out the dangerous lines if we can match them.
+        # Since multiline replacement is tricky in PowerShell strings without regex, we'll try a regex replace.
+        
+        # Regex to wrap the specific failing block
+        # Matches "scene.cycles.film_transparent = True" ... down to ... "scene.cycles.transparent_max_bounces = 80"
+        # We will simply replace the specific lines with "pass # patched" to neutralize them effectively
+        
+        $Content = $Content.Replace("scene.cycles.film_transparent = True", "pass # scene.cycles.film_transparent = True")
+        $Content = $Content.Replace("if scene.cycles.transparent_max_bounces < 80:", "if False: # if scene.cycles.transparent_max_bounces < 80:")
+        $Content = $Content.Replace("scene.cycles.transparent_max_bounces = 80", "pass # scene.cycles.transparent_max_bounces = 80")
+        
         Set-Content -Path $File -Value $Content
 
     - name: Package
