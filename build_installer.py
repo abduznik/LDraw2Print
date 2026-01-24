@@ -24,20 +24,69 @@ def copy_script():
 
 def create_launcher():
     print("Creating Launcher...")
-    # A bat file that accepts a file drop
+    # A bat file that accepts a file drop and asks for instructions
     bat_content = """@echo off
 setlocal
+
 set "TARGET=%~1"
 if "%TARGET%"=="" (
-    echo Drag and drop an .ldr file onto this script!
+    echo.
+    echo ========================================
+    echo    LDraw2Print - LEGO to 3D Printer
+    echo ========================================
+    echo.
+    echo ERROR: No file provided!
+    echo.
+    echo Usage: Drag and drop an .ldr or .mpd file onto this script
+    echo.
     pause
     exit /b
 )
 
-echo Processing: %TARGET%
-"%~dp0blender\\blender.exe" --background --python "%~dp0converter.py" -- "%TARGET%" "%~dp0export_output"
+echo.
+echo ========================================
+echo    LDraw2Print - LEGO to 3D Printer
+echo ========================================
+echo.
+echo File: %~nx1
+echo.
 
-echo Done! Output is in the export_output folder.
+REM Ask if user wants building instructions
+echo Do you want to generate building instructions? (y/n)
+echo (This will create step-by-step images showing how to build the model)
+echo.
+set /p INSTRUCTIONS="Your choice (y/n): "
+
+set "GENERATE_INST=false"
+if /i "%INSTRUCTIONS%"=="y" set "GENERATE_INST=true"
+if /i "%INSTRUCTIONS%"=="yes" set "GENERATE_INST=true"
+
+echo.
+echo ========================================
+echo Starting conversion...
+if "%GENERATE_INST%"=="true" (
+    echo Instructions: YES
+) else (
+    echo Instructions: NO
+)
+echo ========================================
+echo.
+
+REM Run the converter
+"%~dp0blender\\blender.exe" --background --python "%~dp0converter.py" -- "%TARGET%" "%~dp0export_output" "%GENERATE_INST%"
+
+echo.
+echo ========================================
+echo    CONVERSION COMPLETE!
+echo ========================================
+echo.
+echo Your files are in: %~dp0export_output
+echo.
+if "%GENERATE_INST%"=="true" (
+    echo Building instructions: export_output\\instructions\\
+    echo.
+)
+echo You can now close this window or press any key to exit.
 pause
 """
     with open(os.path.join(BUILD_DIR, "LDraw2Print.bat"), "w") as f:
