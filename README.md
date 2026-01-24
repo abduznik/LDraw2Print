@@ -13,6 +13,8 @@ A streamlined tool to convert LDraw (`.ldr`, `.mpd`) Lego models into 3D printab
 This project relies on:
 - **Blender** (GPLv3): https://www.blender.org
 - **ImportLDraw** (GPLv2) by TobyLobster: https://github.com/TobyLobster/ImportLDraw
+- **xhtml2pdf** (Apache 2.0): https://github.com/xhtml2pdf/xhtml2pdf
+- **ReportLab** (BSD): https://www.reportlab.com
 
 This project is licensed under GPLv3.
 

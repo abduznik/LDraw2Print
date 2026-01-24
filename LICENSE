@@ -10,5 +10,10 @@ of this license document, but changing it is not allowed.
 This project bundles:
 1. Blender (https://www.blender.org) - Licensed under GPLv3.
 2. ImportLDraw (https://github.com/TobyLobster/ImportLDraw) - Licensed under GPLv2.
+3. xhtml2pdf (https://github.com/xhtml2pdf/xhtml2pdf) - Licensed under Apache License 2.0.
+4. ReportLab (https://www.reportlab.com) - Licensed under BSD License.
+5. html5lib (https://github.com/html5lib/html5lib-python) - Licensed under MIT License.
+6. pypdf (https://github.com/py-pdf/pypdf) - Licensed under BSD License.
 
-As such, this entire package is distributed under the GNU General Public License v3.0.
+The Apache License 2.0 text can be found at: https://www.apache.org/licenses/LICENSE-2.0.txt
+The BSD/MIT licenses are permissive and their notices are preserved within the bundled files.
