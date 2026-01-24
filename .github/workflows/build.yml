@@ -1,0 +1,142 @@
+name: Build LDraw2Print
+
+on:
+  workflow_dispatch: # Manual trigger
+  release:
+    types: [created] # Runs when you create a release on GitHub
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Download Blender 4.5 (Daily)
+      shell: powershell
+      run: |
+        # Download the latest Blender 4.5 Alpha
+        # Note: This scrapes the landing page for the specific filename pattern
+        $Url = "https://builder.blender.org/download/daily/"
+        $Page = Invoke-WebRequest -Uri $Url
+        # Find the link matching blender-4.5.*-windows-amd64.zip
+        $Link = $Page.Links | Where-Object { $_.href -like "*blender-4.5*-windows-amd64.zip" } | Select-Object -First 1 -ExpandProperty href
+        
+        if (-not $Link) {
+            Write-Error "Could not find Blender 4.5 download link!"
+            exit 1
+        }
+        
+        # Handle relative links if necessary (Builder usually gives absolute, but just in case)
+        if ($Link -notlike "http*") { $Link = "https://builder.blender.org$Link" }
+        
+        Write-Host "Downloading Blender from: $Link"
+        Invoke-WebRequest -Uri $Link -OutFile "blender.zip"
+        
+        # Extract
+        7z x blender.zip -oblender-tmp
+        
+        # Move inner folder to 'blender-diet' (Handle variable directory name)
+        $InnerDir = Get-ChildItem -Path "blender-tmp" -Directory | Select-Object -First 1
+        Move-Item -Path $InnerDir.FullName -Destination "blender-diet"
+
+    - name: Install ImportLDraw Addon
+      shell: powershell
+      run: |
+        # Clone the addon
+        git clone https://github.com/TobyLobster/ImportLDraw.git
+        
+        # Create destination directory (addons_core ensures it loads)
+        $Dest = "blender-diet/4.5/scripts/addons_core/io_scene_importldraw"
+        New-Item -ItemType Directory -Force -Path $Dest
+        
+        # Copy files
+        Copy-Item -Recurse -Path "ImportLDraw/*" -Destination $Dest
+
+    - name: Diet Blender (Strip Components)
+      shell: powershell
+      run: |
+        $diet = "blender-diet"
+        
+        Write-Host "Stripping Documentation and Extras..."
+        Remove-Item "$diet\*.pdf", "$diet\*.txt", "$diet\*.html", "$diet\copyright.txt", "$diet\readme.html" -ErrorAction SilentlyContinue
+        Remove-Item "$diet\lib", "$diet\doc", "$diet\license" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "$diet\blender-launcher.exe" -ErrorAction SilentlyContinue
+        
+        Write-Host "Stripping Debug Symbols (Huge savings)..."
+        Remove-Item "$diet\blender.pdb" -Force -ErrorAction SilentlyContinue
+        
+        Write-Host "Stripping Unused Libraries (Cycles, HiPRT, OIDN GPU)..."
+        # Remove Cycles Kernels
+        Remove-Item "$diet\cycles_kernel_*.dll" -ErrorAction SilentlyContinue
+        # Remove HiPRT (AMD Raytracing)
+        Remove-Item "$diet\hiprt64.dll" -ErrorAction SilentlyContinue
+        # Remove OIDN GPU Backends (Keep CPU and Core)
+        Remove-Item "$diet\blender.shared\OpenImageDenoise_device_*.dll" -ErrorAction SilentlyContinue
+        
+        Write-Host "Stripping Unused Addons..."
+        $addons = "$diet\4.5\scripts\addons_core"
+        $list = @("cycles", "hydra_storm", "io_scene_fbx", "io_scene_gltf2", "rigify", "pose_library", "io_anim_bvh", "io_curve_svg", "io_mesh_uv_layout", "node_wrangler", "ui_translate", "viewport_vr_preview")
+        foreach ($item in $list) { 
+            Remove-Item "$addons\$item" -Recurse -Force -ErrorAction SilentlyContinue 
+        }
+        
+        Write-Host "Stripping Datafiles..."
+        Remove-Item "$diet\4.5\datafiles\studiolights" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "$diet\4.5\datafiles\icons" -Recurse -Force -ErrorAction SilentlyContinue
+
+    - name: Patch Addon (No Cycles Dependency)
+      shell: powershell
+      run: |
+        # We need to apply the patch that prevents ImportLDraw from crashing when Cycles is missing
+        # We can use a simple python script to doing the string replacement or PowerShell
+        
+        $File = "blender-diet/4.5/scripts/addons_core/io_scene_importldraw/loadldraw/loadldraw.py"
+        $Content = Get-Content $File -Raw
+        
+        # Patch setupRealisticLook
+        $Content = $Content.Replace("scene.render.engine = 'CYCLES'", "try:`n        scene.render.engine = 'CYCLES'`n    except:`n        pass")
+        
+        # Patch setupInstructionsLook
+        $Content = $Content.Replace("scene.cycles.film_transparent = True", "try:`n        scene.cycles.film_transparent = True`n    except:`n        pass")
+        
+        Set-Content -Path $File -Value $Content
+
+    - name: Create Launcher & Organize
+      shell: powershell
+      run: |
+        New-Item -ItemType Directory -Force -Path "dist/LDraw2Print"
+        
+        # Move Blender
+        Move-Item -Path "blender-diet" -Destination "dist/LDraw2Print/blender"
+        
+        # Copy CLI Script
+        Copy-Item -Path "export_cli.py" -Destination "dist/LDraw2Print/converter.py"
+        
+        # Create Batch File
+        $BatContent = @"
+        @echo off
+        setlocal
+        set "TARGET=%~1"
+        if "%TARGET%"=="" (
+            echo Drag and drop an .ldr file onto this script!
+            pause
+            exit /b
+        )
+        echo Processing: %TARGET%
+        "%~dp0blender\blender.exe" --background --python "%~dp0converter.py" -- "%TARGET%" "%~dp0export_output"
+        echo Done! Output is in the export_output folder.
+        pause
+        "@
+        Set-Content -Path "dist/LDraw2Print/LDraw2Print.bat" -Value $BatContent
+
+    - name: Create Zip Archive
+      shell: powershell
+      run: |
+        Compress-Archive -Path "dist/LDraw2Print" -DestinationPath "LDraw2Print.zip"
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: LDraw2Print-Windows
+        path: LDraw2Print.zip
