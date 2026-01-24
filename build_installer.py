@@ -24,7 +24,7 @@ def copy_script():
 
 def create_launcher():
     print("Creating Launcher...")
-    # A bat file that accepts a file drop and asks for instructions
+    # This bat file matches your working 'LDraw2Print - Copy (2).bat'
     bat_content = """@echo off
 setlocal
 
@@ -50,9 +50,8 @@ echo ========================================
 echo.
 echo File: %~nx1
 echo.
-
 REM Ask if user wants building instructions
-echo Do you want to generate building instructions? (y/n)
+echo Do you want to generate building instructions?
 echo (This will create step-by-step images showing how to build the model)
 echo.
 set /p INSTRUCTIONS="Your choice (y/n): "
@@ -71,7 +70,6 @@ if "%GENERATE_INST%"=="true" (
 )
 echo ========================================
 echo.
-
 REM Run the converter
 "%~dp0blender\\blender.exe" --background --python "%~dp0converter.py" -- "%TARGET%" "%~dp0export_output" "%GENERATE_INST%"
 

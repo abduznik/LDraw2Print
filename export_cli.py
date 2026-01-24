@@ -21,7 +21,7 @@ if "--" in sys.argv:
     if len(args) >= 2:
         output_dir = args[1]
     if len(args) >= 3:
-        generate_instructions = str(args[2]).lower() == "true"
+        generate_instructions = args[2].lower() == "true"
 
 if not input_file:
     print("ERROR: No input file provided.")
@@ -34,330 +34,580 @@ print(f"--- LDraw2Print CLI ---")
 print(f"Processing: {input_file}")
 print(f"Generate Instructions: {generate_instructions}")
 
-# --- 2. PURE PYTHON PDF GENERATOR (NO DEPENDENCIES) ---
-
-def create_pdf_from_images(image_paths, output_pdf):
-    """Creates a basic PDF by wrapping PNGs into PDF objects"""
-    print(f"Bundling {len(image_paths)} images into PDF...")
-    # This is a minimal PDF 1.4 writer
-    # Note: For simplicity and reliability in this environment, we write a PDF 
-    # that references the images or uses a very basic layout.
-    # Actually, a robust pure-python PDF writer is complex. 
-    # We will use a 'faked' PDF or a very simple structure if possible.
-    # Given the constraints, I will provide a working PDF logic.
-    
-    try:
-        from datetime import datetime
-        t = datetime.now().strftime("%Y%m%d%H%M%S")
-        
-        with open(output_pdf, 'wb') as f:
-            f.write(b"%PDF-1.4\n")
-            xref = []
-            
-            # 1. Catalog
-            xref.append(f.tell())
-            f.write(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
-            
-            # 2. Pages tree
-            pages_ref = " ".join([f"{i+3} 0 R" for i in range(len(image_paths))])
-            xref.append(f.tell())
-            f.write(f"2 0 obj\n<< /Type /Pages /Kids [ {pages_ref} ] /Count {len(image_paths)} >>\nendobj\n".encode())
-            
-            # 3. Pages and Images
-            for i, img_path in enumerate(image_paths):
-                # For each image, we'd need to parse PNG header for size. 
-                # To keep this 100% stable without 'PIL', we assume 1500x1500px (our render size)
-                # and map to A4 points (595 x 842).
-                obj_id = i + 3
-                xref.append(f.tell())
-                
-                # Image data needs to be embedded as XObject. 
-                # This is the hard part without a library. 
-                # INSTEAD: We will generate the HTML and tell the user how to PDF it, 
-                # OR use a basic 'img2pdf' style logic if I can.
-                # Since the user specifically asked for PDF, I'll try a simpler approach:
-                # I'll use the HTML as the primary source and provide a 'print' helper.
-                pass
-        
-        # If I can't do a full binary PDF encode here safely, I'll stick to the 
-        # HTML Manual which is 100% reliable and looks better.
-        # But I will try to use 'reportlab' if the user allows me to install it in workflow.
-    except:
-        pass
-
-def create_html_manual(steps, output_path, model_name):
-    """Create LEGO-style instruction manual as HTML (print to PDF)"""
-    html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>{model_name} - Building Instructions</title>
-    <style>
-        @page {{ size: A4; margin: 0; }}
-        body {{ font-family: 'Arial', sans-serif; margin: 0; background: #f0f0f0; }}
-        .page {{ 
-            width: 210mm; height: 297mm; 
-            padding: 20mm; margin: 10mm auto; 
-            background: white; box-shadow: 0 0 10px rgba(0,0,0,0.1);
-            page-break-after: always; display: flex; flex-direction: column;
-            position: relative;
-        }}
-        .header {{ border-left: 10px solid #FF0000; padding-left: 20px; margin-bottom: 30px; }}
-        .step-num {{ font-size: 80px; font-weight: bold; color: #FF0000; line-height: 1; }}
-        .img-container {{ flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; }}
-        img {{ max-width: 100%; max-height: 100%; object-fit: contain; }}
-        .footer {{ text-align: center; color: #999; font-size: 14px; margin-top: 20px; border-top: 1px solid #eee; padding-top: 10px; }}
-        .cover {{ background: linear-gradient(135deg, #FF0000 0%, #CC0000 100%); color: white; justify-content: center; text-align: center; }}
-        .cover h1 {{ font-size: 60px; text-transform: uppercase; margin: 0; letter-spacing: 5px; }}
-        .brick-icon {{ font-size: 120px; margin: 40px 0; }}
-        @media print {{
-            body {{ background: white; }}
-            .page {{ margin: 0; box-shadow: none; width: 100%; height: 100%; }}
-        }}
-    </style>
-</head>
-<body>
-    <div class="page cover">
-        <h1>Building Guide</h1>
-        <div class="brick-icon">🧱</div>
-        <h2>{model_name}</h2>
-        <p style="font-size: 20px; opacity: 0.8;">{len(steps)} Build Steps</p>
-    </div>
-"""
-    for i, img_path in enumerate(steps, 1):
-        rel_path = os.path.relpath(img_path, os.path.dirname(output_path)).replace("\\", "/")
-        html += f"""
-    <div class="page">
-        <div class="header">
-            <div class="step-num">{i}</div>
-            <div style="font-size: 18px; color: #666;">Step Instructions</div>
-        </div>
-        <div class="img-container">
-            <img src="{rel_path}">
-        </div>
-        <div class="footer">Step {i} of {len(steps)}</div>
-    </div>"""
-    
-    html += "</body></html>"
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(html)
-
-# --- 3. INSTRUCTION RENDERING (USER CONVERTER LOGIC) ---
-
+# --- 2. GENERATE LEGO-STYLE INSTRUCTIONS (if requested) ---
 def parse_ldraw_steps(filepath):
+    """Parse LDraw file to extract build steps"""
     steps = []
     current_step = []
+    
     try:
         with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
             for line in f:
                 line = line.strip()
+                
+                # Check for STEP command
                 if line.startswith('0 STEP') or line.startswith('0 ROTSTEP'):
                     if current_step:
                         steps.append(current_step[:])
                         current_step = []
+                # Part reference (type 1 line)
                 elif line and line[0] == '1':
                     current_step.append(line)
+            
+            # Add final step if exists
             if current_step:
                 steps.append(current_step)
+    
     except Exception as e:
-        print(f"Warning: Could not parse steps: {e}")
+        print(f"Warning: Could not parse LDraw file for steps: {e}")
+        return []
+    
     return steps
 
+def generate_instructions_pdf(input_file, output_dir):
+    """Generate LEGO-style step-by-step building instructions"""
+    try:
+        ext = os.path.splitext(input_file)[1].lower()
+        if not ext in [".ldr", ".mpd", ".dat"]:
+            print("Instructions only supported for LDraw files.")
+            return
+            
+        print("\n========================================")
+        print("    GENERATING BUILD INSTRUCTIONS")
+        print("========================================\n")
+        
+        # Parse steps from LDraw file
+        ldraw_steps = parse_ldraw_steps(input_file)
+        
+        if not ldraw_steps:
+            print("No STEP commands found in LDraw file. Creating single step...")
+            ldraw_steps = [["all"]]  # Single step with everything
+        
+        print(f"Found {len(ldraw_steps)} build steps in LDraw file")
+        
+        # Create instructions folder
+        instructions_dir = os.path.join(output_dir, "instructions")
+        renders_dir = os.path.join(instructions_dir, "renders")
+        os.makedirs(renders_dir, exist_ok=True)
+        
+        # Import model once and track all objects
+        bpy.ops.wm.read_factory_settings(use_empty=True)
+        addon_utils.enable("io_scene_importldraw", default_set=True)
+        
+        print("Importing complete model...")
+        bpy.ops.import_scene.importldraw(
+            filepath=input_file,
+            resPrims='Standard',
+            addGaps=True,
+            gapWidthMM=0.1,
+            look='instructions'
+        )
+        
+        # Get all imported objects in order
+        all_objects = [obj for obj in bpy.context.scene.objects if obj.type == 'MESH']
+        
+        # Setup scene
+        setup_instruction_scene()
+        
+        # Render each step cumulatively
+        rendered_steps = []
+        cumulative_objects = []
+        
+        if len(ldraw_steps) == 1 and ldraw_steps[0] == ["all"]:
+            # Single step - show everything
+            print(f"  Rendering complete model...")
+            img_path = render_step(1, all_objects, [], renders_dir)
+            if img_path:
+                rendered_steps.append({
+                    'step_num': 1,
+                    'image': img_path,
+                    'new_parts': len(all_objects)
+                })
+        else:
+            # Multiple steps - show cumulative build
+            objects_per_step = len(all_objects) // len(ldraw_steps)
+            
+            for step_idx, step_parts in enumerate(ldraw_steps, 1):
+                # Calculate which objects belong to this step
+                start_idx = (step_idx - 1) * objects_per_step
+                end_idx = start_idx + objects_per_step if step_idx < len(ldraw_steps) else len(all_objects)
+                
+                new_objects = all_objects[start_idx:end_idx]
+                cumulative_objects.extend(new_objects)
+                
+                print(f"  Rendering step {step_idx}/{len(ldraw_steps)} ({len(new_objects)} new parts)...")
+                
+                img_path = render_step(step_idx, cumulative_objects, new_objects, renders_dir)
+                if img_path:
+                    rendered_steps.append({
+                        'step_num': step_idx,
+                        'image': img_path,
+                        'new_parts': len(new_objects)
+                    })
+        
+        # Generate PDF-style HTML
+        if rendered_steps:
+            html_path = os.path.join(instructions_dir, f"{Path(input_file).stem}_instructions.html")
+            create_lego_style_instructions(rendered_steps, html_path, Path(input_file).stem)
+            print(f"\n✓ Instructions created: {html_path}")
+            print(f"  Total steps: {len(rendered_steps)}")
+            print(f"  Open in browser and Print to PDF for best results!")
+        
+    except Exception as e:
+        print(f"Error generating instructions: {e}")
+        import traceback
+        traceback.print_exc()
+
 def setup_instruction_scene():
+    """Setup camera and lighting for LEGO-style rendering"""
     scene = bpy.context.scene
-    # Workbench is fast and doesn't require Cycles DLLs
-    scene.render.engine = 'BLENDER_WORKBENCH'
-    scene.display.shading.light = 'MATCAP'
-    scene.display.shading.color_type = 'TEXTURE' 
-    scene.render.resolution_x = 1500
-    scene.render.resolution_y = 1500
-    scene.render.film_transparent = True
     
-    # Add Camera
+    # Render settings
+    try:
+        scene.render.engine = 'BLENDER_EEVEE_NEXT'
+    except:
+        try:
+            scene.render.engine = 'BLENDER_EEVEE'
+        except:
+            scene.render.engine = 'BLENDER_WORKBENCH'
+    
+    scene.render.resolution_x = 1200
+    scene.render.resolution_y = 1200
+    scene.render.film_transparent = True  # Transparent background like LEGO instructions
+    
+    # Camera - isometric-like view
     bpy.ops.object.camera_add(location=(25, -25, 20))
     camera = bpy.context.active_object
-    camera.rotation_euler = (1.1, 0, 0.785)
-    camera.data.type = 'ORTHO'
+    camera.rotation_euler = (1.1, 0, 0.785)  # 45 degree angle
+    camera.data.type = 'ORTHO'  # Orthographic for LEGO style
     camera.data.ortho_scale = 40
     scene.camera = camera
+    
+    # Lighting - bright and even like LEGO instructions
+    bpy.ops.object.light_add(type='SUN', location=(15, -15, 20))
+    sun = bpy.context.active_object
+    sun.data.energy = 2.5
+    sun.rotation_euler = (0.9, 0, 0.6)
+    
+    # Fill light from opposite side
+    bpy.ops.object.light_add(type='SUN', location=(-10, 10, 15))
+    fill = bpy.context.active_object
+    fill.data.energy = 1.5
+    fill.rotation_euler = (1.0, 0, -0.6)
+    
+    # Background
+    if scene.world is None:
+        scene.world = bpy.data.worlds.new("World")
+    scene.world.use_nodes = True
+    bg = scene.world.node_tree.nodes.get('Background')
+    if bg:
+        bg.inputs[0].default_value = (1, 1, 1, 1)  # Pure white
 
 def render_step(step_num, visible_objects, new_objects, output_dir):
-    # Hide all
+    """Render a build step with new parts highlighted"""
+    # Hide everything
     for obj in bpy.data.objects:
         if obj.type == 'MESH':
             obj.hide_render = True
             obj.hide_viewport = True
     
-    # Show cumulative
+    # Show cumulative objects
     for obj in visible_objects:
         obj.hide_render = False
         obj.hide_viewport = False
         
-        # Highlight new parts by selecting them (Workbench shows selection)
-        obj.select_set(obj in new_objects)
+        # Highlight new objects with emission (red glow effect)
+        if obj in new_objects and obj.active_material:
+            # Store original emission
+            mat = obj.active_material
+            if mat.use_nodes:
+                # Add emission to new parts temporarily
+                nodes = mat.node_tree.nodes
+                emission = nodes.new('ShaderNodeEmission')
+                emission.inputs[0].default_value = (1, 0.2, 0.2, 1)  # Red
+                emission.inputs[1].default_value = 0.3  # Subtle glow
     
-    # Frame selection
+    # Frame all visible objects
     if visible_objects:
         bpy.ops.object.select_all(action='DESELECT')
         for obj in visible_objects:
             obj.select_set(True)
-        # Use a context override or simple op for camera framing
-        try:
-            bpy.ops.view3d.camera_to_view_selected()
-        except:
-            pass # Standard behavior if op fails in background
-
+        bpy.ops.view3d.camera_to_view_selected()
+    
+    # Render
     output_path = os.path.join(output_dir, f"step_{step_num:03d}.png")
     bpy.context.scene.render.filepath = output_path
-    bpy.ops.render.render(write_still=True)
-    return output_path
-
-def generate_instructions_manual(input_file, output_dir):
-    try:
-        print("\n=== GENERATING BUILDING GUIDE ===")
-        
-        # 1. Setup Addon
-        bpy.ops.wm.read_factory_settings(use_empty=True)
-        addon_utils.enable("io_scene_importldraw", default_set=True)
-        
-        # 2. Import
-        bpy.ops.import_scene.importldraw(
-            filepath=input_file,
-            resPrims='Standard',
-            addGaps=True,
-            look='instructions'
-        )
-        
-        all_objects = [obj for obj in bpy.context.scene.objects if obj.type == 'MESH']
-        if not all_objects:
-            print("Error: No mesh objects found to render.")
-            return
-
-        # 3. Determine Steps
-        ldraw_steps = parse_ldraw_steps(input_file)
-        
-        # VIRTUAL STEPS: If no steps OR only one big step, create virtual steps (5 pieces each)
-        if len(ldraw_steps) <= 1:
-            print("Model has only one step. Creating virtual steps (5 pieces each) for the guide...")
-            ldraw_steps = []
-            # We create groups of 5 objects
-            for i in range(0, len(all_objects), 5):
-                # We just need any list of length 5 to represent the step size
-                ldraw_steps.append([None] * min(5, len(all_objects) - i))
-        
-        instructions_dir = os.path.join(output_dir, "instructions")
-        renders_dir = os.path.join(instructions_dir, "renders")
-        os.makedirs(renders_dir, exist_ok=True)
-        
-        setup_instruction_scene()
-        
-        step_images = []
-        cumulative_objects = []
-        obj_idx = 0
-        
-        for i, step_parts in enumerate(ldraw_steps, 1):
-            # Calculate how many objects were imported for these parts
-            # If virtual steps, step_parts IS the objects. 
-            # If LDraw steps, it's lines, so we take the count.
-            num_to_add = len(step_parts)
-            new_objects = all_objects[obj_idx : obj_idx + num_to_add]
-            obj_idx += num_to_add
-            cumulative_objects.extend(new_objects)
-            
-            if not new_objects and i <= len(ldraw_steps):
-                continue
-
-            print(f"  Rendering step {i}/{len(ldraw_steps)}...")
-            img = render_step(i, cumulative_objects, new_objects, renders_dir)
-            step_images.append(img)
-            
-        # 4. Create HTML Manual (The "LEGO Manual" look)
-        html_path = os.path.join(instructions_dir, "manual.html")
-        create_html_manual(step_images, html_path, Path(input_file).stem)
-        
-        print(f"✓ Guide created: {html_path}")
-        print(f"  (Open in browser and Print to PDF for the final manual!)")
-        
-    except Exception as e:
-        print(f"Error during instruction generation: {e}")
-
-# --- 4. 3D EXPORT LOGIC (USER logic + Weld) ---
-
-def run_export_loop(objects_to_process, output_dir):
-    print(f"\n=== EXPORTING 3D PRINTABLE FILES ===")
-    count = 0
     
-    def clean_string(text): return re.sub(r'[\\/*?:"<>|]', "_", text)
-    def normalize_material_name(name):
-        if name.endswith("_s"): name = name[:-2]
-        return clean_string(re.sub(r'\.\d+$', '', name))
+    try:
+        bpy.ops.render.render(write_still=True)
+        
+        # Clean up emission nodes
+        for obj in new_objects:
+            if obj.active_material and obj.active_material.use_nodes:
+                nodes = obj.active_material.node_tree.nodes
+                for node in nodes:
+                    if node.type == 'EMISSION':
+                        nodes.remove(node)
+        
+        return output_path if os.path.exists(output_path) else None
+    except Exception as e:
+        print(f"    Warning: Render failed for step {step_num}: {e}")
+        return None
 
-    for obj in objects_to_process:
-        if len(obj.data.vertices) < 3: continue
-        try:
-            mat_name = normalize_material_name(obj.active_material.name) if obj.active_material else "Uncolored"
-            color_folder = os.path.join(output_dir, mat_name)
-            if not os.path.exists(color_folder): os.makedirs(color_folder)
-            
-            # Isolate
-            bpy.ops.object.select_all(action='DESELECT')
-            obj.hide_viewport = False; obj.hide_set(False); obj.select_set(True)
-            bpy.context.view_layer.objects.active = obj
-            
-            # WELD (Strengthen nipples)
-            bpy.ops.object.mode_set(mode='EDIT')
-            bpy.ops.mesh.select_all(action='SELECT')
-            bpy.ops.mesh.remove_doubles(threshold=0.0001) 
-            bpy.ops.object.mode_set(mode='OBJECT')
-            
-            # Modifiers
-            mod_tri = obj.modifiers.new(name="Tri", type='TRIANGULATE')
-            mod_tol = obj.modifiers.new(name="Tol", type='DISPLACE')
-            mod_tol.mid_level = 1.0; mod_tol.strength = TOLERANCE_STRENGTH
-            bpy.context.view_layer.update()
-            
-            # Export
-            clean_name = clean_string(obj.name)
-            final_path = os.path.join(color_folder, f"{clean_name}.obj")
-            
-            if hasattr(bpy.ops.wm, "obj_export"):
-                bpy.ops.wm.obj_export(filepath=final_path, export_selected_objects=True, export_eval_mode='DAG_EVAL_VIEWPORT', export_materials=True, global_scale=1000.0)
-            else:
-                bpy.ops.export_scene.obj(filepath=final_path, use_selection=True, use_mesh_modifiers=True, use_materials=True, global_scale=1000.0)
-            
-            count += 1
-            print(f"  [{count}] Exported: {clean_name}")
-        except Exception as e:
-            print(f"  FAILED {obj.name}: {e}")
+def create_lego_style_instructions(steps, output_path, model_name):
+    """Create LEGO-style instruction manual as HTML (print to PDF)"""
+    
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{model_name} - Building Instructions</title>
+    <style>
+        @page {{
+            size: A4;
+            margin: 15mm;
+        }}
+        
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+        
+        body {{
+            font-family: Arial, sans-serif;
+            background: white;
+        }}
+        
+        .cover-page {{
+            page-break-after: always;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #FF0000 0%, #CC0000 100%);
+            color: white;
+            text-align: center;
+            padding: 40px;
+        }}
+        
+        .cover-page h1 {{
+            font-size: 48px;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+        }}
+        
+        .cover-page .subtitle {{
+            font-size: 24px;
+            margin-bottom: 40px;
+        }}
+        
+        .cover-page .info {{
+            font-size: 18px;
+            margin-top: 40px;
+            opacity: 0.9;
+        }}
+        
+        .step-page {{
+            page-break-after: always;
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }}
+        
+        .step-header {{
+            display: flex;
+            align-items: center;
+            margin-bottom: 30px;
+            padding: 15px;
+            background: #f0f0f0;
+            border-left: 5px solid #FF0000;
+        }}
+        
+        .step-number {{
+            font-size: 72px;
+            font-weight: bold;
+            color: #FF0000;
+            margin-right: 20px;
+            line-height: 1;
+        }}
+        
+        .step-info {{
+            flex: 1;
+        }}
+        
+        .step-info h2 {{
+            font-size: 28px;
+            margin-bottom: 5px;
+        }}
+        
+        .step-info .parts-count {{
+            font-size: 16px;
+            color: #666;
+        }}
+        
+        .step-content {{
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }}
+        
+        .step-image {{
+            max-width: 100%;
+            max-height: 700px;
+            width: auto;
+            height: auto;
+            object-fit: contain;
+        }}
+        
+        .parts-list {{
+            margin-top: 20px;
+            padding: 15px;
+            background: #f9f9f9;
+            border: 2px solid #e0e0e0;
+            border-radius: 5px;
+        }}
+        
+        .parts-list h3 {{
+            font-size: 18px;
+            margin-bottom: 10px;
+            color: #FF0000;
+        }}
+        
+        .footer {{
+            margin-top: auto;
+            padding-top: 20px;
+            text-align: center;
+            font-size: 12px;
+            color: #999;
+            border-top: 1px solid #e0e0e0;
+        }}
+        
+        @media print {{
+            body {{
+                background: white;
+            }}
+            .step-page {{
+                page-break-after: always;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    <!-- Cover Page -->
+    <div class="cover-page">
+        <h1>Building Instructions</h1>
+        <div class="subtitle">{model_name}</div>
+        <div style="font-size: 64px; margin: 40px 0;">🧱</div>
+        <div class="info">
+            {len(steps)} Steps
+        </div>
+    </div>
+"""
+    
+    # Add each step
+    for step_data in steps:
+        step_num = step_data['step_num']
+        img_path = step_data['image']
+        new_parts = step_data['new_parts']
+        
+        rel_path = os.path.relpath(img_path, os.path.dirname(output_path))
+        
+        html += f"""
+    <!-- Step {step_num} -->
+    <div class="step-page">
+        <div class="step-header">
+            <div class="step-number">{step_num}</div>
+            <div class="step-info">
+                <h2>Step {step_num}</h2>
+                <div class="parts-count">{new_parts} piece{'s' if new_parts != 1 else ''} in this step</div>
+            </div>
+        </div>
+        
+        <div class="step-content">
+            <img src="{rel_path}" alt="Step {step_num}" class="step-image">
+        </div>
+        
+        <div class="footer">
+            Step {step_num} of {len(steps)}
+        </div>
+    </div>
+"""
+    
+    html += """
+</body>
+</html>
+"""
+    
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(html)
+    
+    print(f"\nTo create PDF:")
+    print(f"  1. Open: {output_path}")
+    print(f"  2. Press Ctrl+P (Print)")
+    print(f"  3. Select 'Save as PDF'")
+    print(f"  4. Done! 🎉")
 
-# --- 5. MAIN EXECUTION ---
-
-# Step A: Instructions
+# Execute instruction generation FIRST if requested
 if generate_instructions:
-    generate_instructions_manual(input_file, output_dir)
+    generate_instructions_pdf(input_file, output_dir)
+    print("\nInstruction generation complete. Now starting 3D file export...\n")
 
-# Step B: 3D Export
+# --- 3. IMPORT FOR 3D EXPORT ---
 bpy.ops.wm.read_factory_settings(use_empty=True)
+
 ext = os.path.splitext(input_file)[1].lower()
 objects_to_process = []
 
 try:
     if ext in [".ldr", ".mpd", ".dat"]:
-        addon_utils.enable("io_scene_importldraw", default_set=True)
-        bpy.ops.import_scene.importldraw(filepath=input_file, resPrims='High', addGaps=True, look='instructions')
+        print("Detected LDraw file. Enabling addon...")
+        addon_name = "io_scene_importldraw"
+        if not addon_utils.check(addon_name)[0]:
+            try:
+                addon_utils.enable(addon_name, default_set=True)
+            except Exception as e:
+                print(f"CRITICAL: Could not enable {addon_name}: {e}")
+                sys.exit(1)
+
+        print("Importing LDraw for 3D export...")
+        bpy.ops.import_scene.importldraw(
+            filepath=input_file,
+            resPrims='High',
+            addGaps=True,
+            gapWidthMM=0.1,
+            look='instructions'
+        )
+        
+        print("Converting LDraw Instances to Real Meshes...")
         bpy.ops.object.select_all(action='SELECT')
         bpy.ops.object.duplicates_make_real()
+        
         objects_to_process = [obj for obj in bpy.context.selected_objects if obj.type == 'MESH']
         bpy.ops.object.select_all(action='DESELECT')
+
     elif ext == ".obj":
-        if hasattr(bpy.ops.wm, "obj_import"): bpy.ops.wm.obj_import(filepath=input_file)
-        else: bpy.ops.import_scene.obj(filepath=input_file)
-        objects_to_process = [obj for obj in bpy.data.objects if obj.type == 'MESH']
+        print("Detected OBJ file.")
+        if hasattr(bpy.ops.wm, "obj_import"):
+            bpy.ops.wm.obj_import(filepath=input_file)
+        else:
+            bpy.ops.import_scene.obj(filepath=input_file)
+            
+        objects_to_process = [obj for obj in bpy.context.selected_objects if obj.type == 'MESH']
+
 except Exception as e:
     print(f"Import Error: {e}")
     sys.exit(1)
 
-run_export_loop(objects_to_process, output_dir)
+# --- 4. EXPORT LOOP ---
+print(f"\n========================================")
+print("    EXPORTING 3D PRINTABLE FILES")
+print("========================================\n")
+print(f"Processing {len(objects_to_process)} objects...")
 
-print(f"\n=== ALL JOBS FINISHED ===")
+count = 0
+
+def clean_string(text):
+    return re.sub(r'[\\/*?:":<>|]', "_", text)
+
+def normalize_material_name(name):
+    if name.endswith("_s"):
+        name = name[:-2]
+    name = re.sub(r'\.\d+$', '', name)
+    return clean_string(name)
+
+for obj in objects_to_process:
+    
+    if len(obj.data.vertices) < 3:
+        continue
+
+    try:
+        # A. Setup Folder
+        if obj.active_material:
+            mat_name = normalize_material_name(obj.active_material.name)
+        else:
+            mat_name = "Uncolored"
+            
+        color_folder = os.path.join(output_dir, mat_name)
+        if not os.path.exists(color_folder):
+            os.makedirs(color_folder)
+
+        # B. Isolate
+        bpy.ops.object.select_all(action='DESELECT')
+        obj.hide_viewport = False
+        obj.hide_set(False)
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+        
+        # C. STRENGTHEN STUDS
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='SELECT')
+        bpy.ops.mesh.remove_doubles(threshold=0.0001) 
+        bpy.ops.object.mode_set(mode='OBJECT')
+        
+        # D. MODIFIERS
+        mod_tri = obj.modifiers.new(name="AutoTriangulate", type='TRIANGULATE')
+        mod_tri.keep_custom_normals = True
+        mod_tri.quad_method = 'BEAUTY'
+        
+        mod_tol = obj.modifiers.new(name="ToleranceShrink", type='DISPLACE')
+        mod_tol.mid_level = 1.0
+        mod_tol.strength = TOLERANCE_STRENGTH
+        
+        bpy.context.view_layer.update()
+        
+        # E. Export
+        clean_name = clean_string(obj.name)
+        
+        base_name = clean_name
+        dup_c = 1
+        final_path = os.path.join(color_folder, f"{clean_name}.obj")
+        while os.path.exists(final_path):
+            clean_name = f"{base_name}_{dup_c}"
+            final_path = os.path.join(color_folder, f"{clean_name}.obj")
+            dup_c += 1
+
+        if hasattr(bpy.ops.wm, "obj_export"):
+            bpy.ops.wm.obj_export(
+                filepath=final_path,
+                export_selected_objects=True,
+                export_eval_mode='DAG_EVAL_VIEWPORT',
+                export_materials=True,
+                global_scale=1000.0 
+            )
+        else:
+            bpy.ops.export_scene.obj(
+                filepath=final_path,
+                use_selection=True,
+                use_mesh_modifiers=True,
+                use_materials=True,
+                global_scale=1000.0,
+                axis_forward='Y',
+                axis_up='Z'
+            )
+
+        obj.modifiers.remove(mod_tri)
+        obj.modifiers.remove(mod_tol)
+        
+        count += 1
+        print(f"  [{count}/{len(objects_to_process)}] Exported: {clean_name}")
+
+    except Exception as e:
+        print(f"  FAILED {obj.name}: {e}")
+
+print(f"\n========================================")
+print(f"    JOB COMPLETE!")
+print(f"========================================")
+print(f"  3D Files Exported: {count}")
+if generate_instructions:
+    print(f"  Instructions: Created")
+print(f"  Output Location: {output_dir}")
+print(f"========================================\n")
+
 sys.exit(0)
