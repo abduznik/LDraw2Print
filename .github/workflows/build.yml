@@ -71,9 +71,14 @@ jobs:
         Remove-Item "$diet\lib", "$diet\doc", "$diet\license" -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item "$diet\blender-launcher.exe" -ErrorAction SilentlyContinue
         Remove-Item "$diet\blender.pdb" -Force -ErrorAction SilentlyContinue
-        Remove-Item "$diet\cycles_kernel_*.dll" -ErrorAction SilentlyContinue
+        Write-Host "Stripping Unused Libraries (Cycles, HiPRT, OIDN GPU)..."
+        # KEEP cycles_kernel_oneapi_aot.dll - It is a hard dependency for Blender 4.5+ on Windows
+        # Remove HiPRT (AMD Raytracing)
         Remove-Item "$diet\hiprt64.dll" -ErrorAction SilentlyContinue
+        # Remove OIDN GPU Backends (Keep CPU and Core)
         Remove-Item "$diet\blender.shared\OpenImageDenoise_device_*.dll" -ErrorAction SilentlyContinue
+        
+        Write-Host "Stripping Unused Addons..."
         $addons = "$diet\4.5\scripts\addons_core"
         $list = @("cycles", "hydra_storm", "io_scene_fbx", "io_scene_gltf2", "rigify", "pose_library", "io_anim_bvh", "io_curve_svg", "io_mesh_uv_layout", "node_wrangler", "ui_translate", "viewport_vr_preview")
         foreach ($item in $list) { Remove-Item "$addons\$item" -Recurse -Force -ErrorAction SilentlyContinue }
@@ -121,15 +126,15 @@ jobs:
         }
         
         $ZipName = "LDraw2Print-${Version}.zip"
-        Compress-Archive -Path "dist/LDraw2Print" -DestinationPath "$ZipName"
+        Compress-Archive -Path "dist/LDraw2Print" -DestinationPath "$ZipName" -CompressionLevel Optimal
         
         echo "ZIP_NAME=$ZipName" >> $env:GITHUB_ENV
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ env.ZIP_NAME }}
-        path: ${{ env.ZIP_NAME }}
+        name: LDraw2Print-Build
+        path: dist/LDraw2Print
 
     - name: Upload to Release
       if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.version != '')
