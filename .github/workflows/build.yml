@@ -25,22 +25,25 @@ jobs:
       shell: powershell
       run: |
         $Url = "https://builder.blender.org/download/daily/"
-        # Use Basic Parsing to avoid IE engine dependency errors on CI runners
+        Write-Host "Fetching $Url..."
         $Page = Invoke-WebRequest -Uri $Url -UseBasicParsing
         
-        # Regex to find the link. Looks for href="..." containing blender-4.5...windows-amd64.zip
-        # We look for the specific pattern currently used by the builder
-        if ($Page.Content -match 'href="([^"]*blender-4.5[^"]*-windows-amd64\.zip)"') {
+        # Debug: Check if we got content
+        Write-Host "Page content length: $($Page.Content.Length)"
+        
+        # Regex: Look for 'href=' followed by anything containing 'blender-4.5' and 'windows-amd64.zip'
+        # The page structure usually has <a href="/download/daily/blender-4.5.0-alpha+main.HASH.windows.amd64.zip">
+        if ($Page.Content -match 'href="([^"]*blender-4\.5[^"]*-windows-amd64\.zip)"') {
             $Link = $matches[1]
+            Write-Host "Found Link: $Link"
         } else {
-            Write-Error "Could not find Blender 4.5 download link in page content!"
+            Write-Error "Could not find Blender 4.5 download link! Page content might have changed."
+            # Debug: Print first 500 chars to see what's wrong
+            Write-Host $Page.Content.Substring(0, [math]::Min(500, $Page.Content.Length))
             exit 1
         }
         
-        # Handle relative links if necessary
         if ($Link -notlike "http*") { 
-            # Builder often uses absolute, but sometimes relative. Base is usually the daily/ url or root.
-            # Usually the scraper returns the relative part if using regex on href value.
             $Link = "https://builder.blender.org$Link" 
         }
         
