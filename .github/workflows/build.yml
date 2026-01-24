@@ -55,6 +55,21 @@ jobs:
         $InnerDir = Get-ChildItem -Path "blender-tmp" -Directory | Select-Object -First 1
         Move-Item -Path $InnerDir.FullName -Destination "blender-diet"
 
+    - name: Install Python Dependencies into Blender
+      shell: powershell
+      run: |
+        # 1. Locate the bundled python.exe
+        # Note: In Blender 4.3+, the path is typically: [root]/4.5/python/bin/python.exe
+        $BlenderPy = "blender-diet/4.5/python/bin/python.exe"
+        
+        # 2. Bootstrap pip if it's missing
+        Write-Host "Ensuring pip is installed..."
+        & $BlenderPy -m ensurepip --upgrade
+
+        # 3. Install xhtml2pdf and its dependencies
+        Write-Host "Installing xhtml2pdf..."
+        & $BlenderPy -m pip install xhtml2pdf
+
     - name: Install ImportLDraw Addon
       shell: powershell
       run: |
