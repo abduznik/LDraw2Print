@@ -1,4 +1,4 @@
-# Brick-Link Model Separator
+# LDraw2Print
 
 A Blender script to automate the process of separating and exporting LEGO models from BrickLink Studio 2 into individual part files, organized by color.
 
