@@ -25,13 +25,32 @@ jobs:
       shell: powershell
       run: |
         $Url = "https://builder.blender.org/download/daily/"
-        $Page = Invoke-WebRequest -Uri $Url
-        $Link = $Page.Links | Where-Object { $_.href -like "*blender-4.5*-windows-amd64.zip" } | Select-Object -First 1 -ExpandProperty href
-        if (-not $Link) { Write-Error "Could not find Blender 4.5 download link!"; exit 1 }
-        if ($Link -notlike "http*") { $Link = "https://builder.blender.org$Link" }
+        # Use Basic Parsing to avoid IE engine dependency errors on CI runners
+        $Page = Invoke-WebRequest -Uri $Url -UseBasicParsing
+        
+        # Regex to find the link. Looks for href="..." containing blender-4.5...windows-amd64.zip
+        # We look for the specific pattern currently used by the builder
+        if ($Page.Content -match 'href="([^"]*blender-4.5[^"]*-windows-amd64\.zip)"') {
+            $Link = $matches[1]
+        } else {
+            Write-Error "Could not find Blender 4.5 download link in page content!"
+            exit 1
+        }
+        
+        # Handle relative links if necessary
+        if ($Link -notlike "http*") { 
+            # Builder often uses absolute, but sometimes relative. Base is usually the daily/ url or root.
+            # Usually the scraper returns the relative part if using regex on href value.
+            $Link = "https://builder.blender.org$Link" 
+        }
+        
         Write-Host "Downloading Blender from: $Link"
         Invoke-WebRequest -Uri $Link -OutFile "blender.zip"
+        
+        # Extract
         7z x blender.zip -oblender-tmp
+        
+        # Move inner folder to 'blender-diet' (Handle variable directory name)
         $InnerDir = Get-ChildItem -Path "blender-tmp" -Directory | Select-Object -First 1
         Move-Item -Path $InnerDir.FullName -Destination "blender-diet"
 
