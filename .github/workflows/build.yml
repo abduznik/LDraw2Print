@@ -14,6 +14,9 @@ on:
   release:
     types: [created]
 
+permissions: 
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -21,7 +24,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Download Blender
+    - name: Download Blender 4.5 (Daily)
       shell: powershell
       run: |
         $DailyUrl = "https://builder.blender.org/download/daily/"
@@ -31,10 +34,7 @@ jobs:
         Write-Host "Attempting to scrape daily build from $DailyUrl..."
         try {
             $Page = Invoke-WebRequest -Uri $DailyUrl -UseBasicParsing -ErrorAction Stop
-            
-            # loose regex: look for any zip with 'blender-4.5' and 'windows'
-            # (?i) makes it case-insensitive
-            if ($Page.Content -match '(?i)href="([^"]*blender-4\.5[^"]*windows[^"]*\.zip)"') {
+            if ($Page.Content -match '(?i)href="([^\"]*blender-4.5[^\"]*windows[^\"]*\.zip)"') {
                 $Link = $matches[1]
                 Write-Host "Found Daily Link: $Link"
             }
@@ -47,18 +47,11 @@ jobs:
             $Link = $FallbackUrl
         }
         
-        # Handle relative links
-        if ($Link -notlike "http*") { 
-            $Link = "https://builder.blender.org$Link" 
-        }
-        
+        if ($Link -notlike "http*") { $Link = "https://builder.blender.org$Link" }
         Write-Host "Downloading Blender from: $Link"
         Invoke-WebRequest -Uri $Link -OutFile "blender.zip"
         
-        # Extract
         7z x blender.zip -oblender-tmp
-        
-        # Move inner folder to 'blender-diet' (Handle variable directory name)
         $InnerDir = Get-ChildItem -Path "blender-tmp" -Directory | Select-Object -First 1
         Move-Item -Path $InnerDir.FullName -Destination "blender-diet"
 
@@ -117,10 +110,19 @@ jobs:
         "@
         Set-Content -Path "dist/LDraw2Print/LDraw2Print.bat" -Value $BatContent
         
-        # Zip naming uses version input
-        $ZipName = "LDraw2Print-${{ github.event.inputs.version }}.zip"
-        if ("${{ github.event.inputs.version }}" -eq "") { $ZipName = "LDraw2Print-build.zip" }
+        # Determine Version for Filename
+        $InputVer = "${{ github.event.inputs.version }}"
+        if ($InputVer -ne "") {
+            $Version = $InputVer
+        } elseif ("${{ github.event_name }}" -eq "release") {
+            $Version = "${{ github.ref_name }}"
+        } else {
+            $Version = "build"
+        }
+        
+        $ZipName = "LDraw2Print-${Version}.zip"
         Compress-Archive -Path "dist/LDraw2Print" -DestinationPath "$ZipName"
+        
         echo "ZIP_NAME=$ZipName" >> $env:GITHUB_ENV
 
     - name: Upload Artifact
@@ -128,3 +130,13 @@ jobs:
       with:
         name: ${{ env.ZIP_NAME }}
         path: ${{ env.ZIP_NAME }}
+
+    - name: Upload to Release
+      if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.version != '')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: ${{ env.ZIP_NAME }}
+        tag_name: ${{ github.event.inputs.version }}
+        name: ${{ github.event.inputs.title }}
+        draft: false
+        prerelease: false
