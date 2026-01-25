@@ -51,7 +51,8 @@ def parse_ldraw_steps(filepath):
                     current_step.append(line)
             if current_step:
                 steps.append(current_step)
-    except Exception:
+    except Exception as e:
+        print(f"Error parsing LDraw steps: {e}")
         return []
     return steps
 
@@ -123,7 +124,8 @@ def render_step(step_num, visible_objects, new_objects, output_dir):
                     if node.type == "EMISSION":
                         nodes.remove(node)
         return output_path if os.path.exists(output_path) else None
-    except:
+    except Exception as e:
+        print(f"Error rendering step {step_num}: {e}")
         return None
 
 def create_lego_style_instructions(steps, output_path, model_name):
@@ -337,8 +339,8 @@ def generate_instructions_pdf(input_file, output_dir):
                 rendered_steps, html_path, Path(input_file).stem
             )
 
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Error generating instructions: {e}")
 
 # --- 3. RUN PROCESS ---
 if generate_instructions:
@@ -374,7 +376,8 @@ try:
         objects_to_process = [
             obj for obj in bpy.context.selected_objects if obj.type == "MESH"
         ]
-except Exception:
+except Exception as e:
+    print(f"Error importing file: {e}")
     sys.exit(1)
 
 print("\n========================================")
@@ -454,8 +457,8 @@ for obj in objects_to_process:
         count += 1
         print(f"  [{count}/{len(objects_to_process)}] Exported: {raw_name}")
 
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Error processing object {obj.name if 'obj' in locals() else 'unknown'}: {e}")
 
 print("\n========================================")
 print("    JOB COMPLETE!")
