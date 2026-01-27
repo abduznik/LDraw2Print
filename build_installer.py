@@ -2,29 +2,45 @@ import os
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 # CONFIG
-BUILD_DIR = "dist/LDraw2Print"
-BLENDER_SRC = "blender-diet"
-ADDON_SRC = "blender-diet/4.5/scripts/addons_core/io_scene_importldraw"
-SCRIPT_SRC = "export_cli.py"
+BUILD_DIR = Path("dist") / "LDraw2Print"
+BLENDER_SRC = Path("blender-diet")
+ADDON_SRC = Path("blender-diet") / "4.5" / "scripts" / "addons_core" / "io_scene_importldraw"
+SCRIPT_SRC = Path("export_cli.py")
+
 
 def clean_build_dir():
-    if os.path.exists("dist"):
-        shutil.rmtree("dist")
-    os.makedirs(BUILD_DIR)
+    """Remove existing dist folder and create fresh build directory"""
+    dist_dir = Path("dist")
+    if dist_dir.exists():
+        shutil.rmtree(dist_dir)
+    BUILD_DIR.mkdir(parents=True, exist_ok=True)
+
 
 def copy_blender():
+    """Copy Blender Diet folder to build directory"""
     print("Copying Blender Diet...")
-    shutil.copytree(BLENDER_SRC, os.path.join(BUILD_DIR, "blender"), dirs_exist_ok=True)
+    shutil.copytree(
+        BLENDER_SRC,
+        BUILD_DIR / "blender",
+        dirs_exist_ok=True
+    )
+
 
 def copy_script():
+    """Copy export_cli.py script to build directory as converter.py"""
     print("Copying Export Script...")
-    shutil.copy(SCRIPT_SRC, os.path.join(BUILD_DIR, "converter.py"))
+    shutil.copy(
+        SCRIPT_SRC,
+        BUILD_DIR / "converter.py"
+    )
+
 
 def create_launcher():
+    """Create a Windows launcher BAT file for the application"""
     print("Creating Launcher...")
-    # This bat file matches your working 'LDraw2Print - Copy (2).bat'
     bat_content = """@echo off
 setlocal
 
@@ -87,11 +103,13 @@ if "%GENERATE_INST%"=="true" (
 echo You can now close this window or press any key to exit.
 pause
 """
-    with open(os.path.join(BUILD_DIR, "LDraw2Print.bat"), "w") as f:
+    with (BUILD_DIR / "LDraw2Print.bat").open("w", encoding="utf-8") as f:
         f.write(bat_content)
 
+
 def main():
-    if not os.path.exists(BLENDER_SRC):
+    """Main build function"""
+    if not BLENDER_SRC.exists():
         print(f"Error: {BLENDER_SRC} not found. Please run the setup first.")
         return
 
@@ -99,8 +117,9 @@ def main():
     copy_blender()
     copy_script()
     create_launcher()
-    
+
     print(f"Build Complete! Check the '{BUILD_DIR}' folder.")
+
 
 if __name__ == "__main__":
     main()
