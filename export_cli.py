@@ -1,3 +1,4 @@
+import json
 import bpy
 import os
 import sys
@@ -10,6 +11,40 @@ from xhtml2pdf import pisa
 DEFAULT_EXPORT_DIR = os.path.join(os.getcwd(), "export_output")
 TOLERANCE_STRENGTH = -0.075
 RENDER_SAMPLES = 8
+
+
+def _load_config() -> dict:
+    cfg_path = Path.cwd() / "config.json"
+    if not cfg_path.exists():
+        return {}
+    try:
+        with cfg_path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception as e:
+        print(f"WARN Could not read config.json: ({e}). Using defaults.")
+        return {}
+    
+def _apply_config(cfg: dict) -> None:
+    global TOLERANCE_STRENGTH,RENDER_SAMPLES, DEFAULT_EXPORT_DIR
+
+    if isinstance(cfg.get("TOLERANCE_STRENGTH"), (int, float)):
+        TOLERANCE_STRENGTH = cfg["TOLERANCE_STRENGTH"]
+
+    if isinstance(cfg.get("RENDER_SAMPLES"), int):
+        RENDER_SAMPLES = cfg["RENDER_SAMPLES"]
+
+    val = cfg.get("DEFAULT_EXPORT_DIR")
+    if isinstance(cfg.get("DEFAULT_EXPORT_DIR"), str):
+        DEFAULT_EXPORT_DIR = cfg["DEFAULT_EXPORT_DIR"]
+    
+    
+
+_cfg = _load_config()
+_apply_config(_cfg)
+
+    
+
 
 # --- 1. SETUP ---
 input_file = None
