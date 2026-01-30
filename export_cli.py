@@ -76,6 +76,15 @@ try:
 except OSError as e:
     print(f"ERROR: Unable to open input file: {e}")
     sys.exit(1)
+input_path = Path(input_file)
+
+if not input_path.exists():
+    print(f"ERROR: Input file does not exist: {input_file}")
+    sys.exit(1)
+
+if not input_path.is_file():
+    print(f"ERROR: Input path is not a file: {input_file}")
+    sys.exit(1)
 
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
